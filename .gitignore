@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.DS_Store
+
+# 本地私密配置（含证书路径、服务端地址），只提交 *.example.json
+server/config.json
+client/config.json
+
+# 证书与私钥
+*.pem
+*.key
+*.crt
+!test/fixtures/*.pem

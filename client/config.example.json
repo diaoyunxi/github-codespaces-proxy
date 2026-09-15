@@ -1,0 +1,13 @@
+{
+  "listenHost": "127.0.0.1",
+  "listenPort": 8080,
+  "serverUrl": "wss://proxy.example.com/",
+  "rejectUnauthorized": true,
+  "caFile": "",
+  "connectTimeoutMs": 10000,
+  "handshakeTimeoutMs": 15000,
+  "reconnectDelayMs": 500,
+  "maxReconnectDelayMs": 15000,
+  "pingIntervalMs": 25000,
+  "maxSessions": 1024
+}
