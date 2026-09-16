@@ -185,7 +185,8 @@ Find-NetRoute -RemoteIPAddress 203.0.113.10 | Select-Object -First 1 IPAddress, 
 ### 目标被 SSRF 拦截
 
 日志 / 客户端返回 `502 Bad Gateway: ... blocked range ...`。
-这是预期行为：服务端只允许访问公网地址。
+这是预期行为：服务端只允许访问公网地址（私有、回环、链路本地含云元数据、
+CGNAT、组播、保留网段一律拦截）。
 确需访问内网时，应改 `server/ssrf.js` 的网段表，而不是全局关闭校验。
 
 ### 会话数打满

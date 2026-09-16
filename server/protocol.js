@@ -2,9 +2,11 @@
  * WSS 隧道帧协议 —— 客户端与服务端共用实现的规范说明与工具函数。
  *
  * 控制消息：WebSocket 文本帧 + JSON
- *   { "type": "connect", "sessionId": 1, "host": "example.com", "port": 443, "mode": "tcp-over-wss" }
- *   { "type": "close",   "sessionId": 1 }
- *   { "type": "error",   "sessionId": 1, "message": "..." }
+ *   { "type": "connect",     "sessionId": 1, "host": "example.com", "port": 443, "mode": "tcp-over-wss" }
+ *   { "type": "connected",   "sessionId": 1 }
+ *   { "type": "half-close",  "sessionId": 1 }   // 客户端上行 EOF：不再发送数据，但仍接收下行
+ *   { "type": "close",       "sessionId": 1 }
+ *   { "type": "error",       "sessionId": 1, "message": "..." }
  *
  * 数据消息：WebSocket 二进制帧
  *   [0..3]  4 字节大端 uint32 sessionId

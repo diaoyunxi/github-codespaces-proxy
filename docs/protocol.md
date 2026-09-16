@@ -43,9 +43,33 @@
 { "type": "connected", "sessionId": 305419896 }
 ```
 
-> 客户端在收到 `connected` 之前不应发送该会话的数据帧；
-> 收到之前发送的数据会被忽略（服务端 `handleData` 找不到会话即丢弃）。
-> 因此客户端实现应把「建连前的首段字节」（如 TLS ClientHello）缓存到 `connected` 之后再发。
+> 客户端在收到 `connected` 之前不应发送该会话的数据帧。
+> 服务端在目标 TCP 连接建立完成前会**静默丢弃**该会话的数据帧
+> —— `handleData` 虽能查到会话（`handleConnect` 在 `await guardTarget(...)` 之前
+> 就已 `sessions.set(sessionId, session)`），但此时 `state` 仍为 `connecting`，
+> `Session.write` 仅在 `state === open` 时写入，返回 `false` 的字节被丢弃。
+> 因此客户端实现**必须**把「建连前的首段字节」（如 TLS ClientHello、请求头）
+> 缓存到 `connected` 之后再补发，否则会丢字节。
+
+### `half-close`（客户端 → 服务端）
+
+客户端上行方向 EOF：客户端不再发送该会话的数据，但**仍会接收下行数据**。
+
+```json
+{ "type": "half-close", "sessionId": 305419896 }
+```
+
+语义等价于向目标 TCP 发送 FIN（`socket.end()`），而不是关闭整个会话。
+服务端收到后：
+
+- 将 `Session.uplinkClosed` 置为 `true`，此后到达的该会话数据帧一律丢弃
+- 调用 `session.socket.end()` 向目标发送 FIN
+- **保留**下行：目标后续返回的数据仍会封帧发回客户端
+- 当目标 socket 关闭时，会话才真正回收（回 `close`）
+
+典型场景：HTTP/1.0 客户端、部分语言 SDK、隧道内半关闭
+—— 「请求发完 → shutdown 写端 → 等响应」。
+客户端的本地 socket 收到 FIN（`'end'`）时即发送本消息。
 
 ### `close`（双向）
 

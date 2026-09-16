@@ -24,6 +24,8 @@ export class TunnelSession extends EventEmitter {
     this.state = STATE_CONNECTING;
     this.createdAt = Date.now();
     this.closedReason = null;
+    /** 上行是否已半关（本地不再发送数据） */
+    this.uplinkClosed = false;
   }
 
   /** WSS 侧收到数据 → 交给本地 TCP 连接 */
@@ -34,8 +36,18 @@ export class TunnelSession extends EventEmitter {
 
   /** 本地 TCP 收到数据 → 交给上层封帧 */
   push(chunk) {
-    if (this.state === STATE_CLOSED) return;
+    if (this.state === STATE_CLOSED || this.uplinkClosed) return;
     this.emit('uplink', chunk);
+  }
+
+  /**
+   * 本地 TCP 半关写端（收到 FIN）→ 通知服务端「不再有上行数据」。
+   * 只结束上行方向，下行继续，直到服务端回收会话。
+   */
+  pushEnd() {
+    if (this.state === STATE_CLOSED || this.uplinkClosed) return;
+    this.uplinkClosed = true;
+    this.emit('uplink-end');
   }
 
   markOpen() {
@@ -85,6 +97,8 @@ export class WssTunnel extends EventEmitter {
     this._reconnectAttempts = 0;
     this._pingTimer = null;
     this._reconnectTimer = null;
+    /** 本次连接是否已处理过断开（用于 error / close 去重） */
+    this._disconnected = false;
   }
 
   /** 建立（或重建）WSS 长连接 */
@@ -96,9 +110,12 @@ export class WssTunnel extends EventEmitter {
       ...this.wsOptions,
     });
     this.ws = ws;
+    // 新一轮连接：重置断线去重标记，使本次连接的首次断开能被正常处理
+    this._disconnected = false;
 
     ws.on('open', () => {
       this.ready = true;
+      this._disconnected = false;
       this._reconnectAttempts = 0;
       this._startPing();
       this.emit('ready');
@@ -125,6 +142,9 @@ export class WssTunnel extends EventEmitter {
       this._onDisconnected('wss closed');
     });
 
+    // 只上报错误：断线统一由 'close' 处理。
+    // ws 在一次失败中通常先 'error' 再 'close'，若两者都调 _onDisconnected，
+    // 同一次断线会被处理 2 次（down 事件重复、退避档位被推快、timer 被反复重设）。
     ws.on('error', (err) => {
       this.emit('error', err);
       this._onDisconnected(`wss error: ${err.message}`);
@@ -143,7 +163,9 @@ export class WssTunnel extends EventEmitter {
         break;
       case 'error':
         if (session) {
-          session.emit('error', new Error(msg.message || 'server error'));
+          if (session.listenerCount('error') > 0) {
+            session.emit('error', new Error(msg.message || 'server error'));
+          }
           session.close(`server error: ${msg.message}`);
         }
         this.emit('session-error', msg);
@@ -153,12 +175,24 @@ export class WssTunnel extends EventEmitter {
     }
   }
 
-  /** WSS 断开：全部在途会话立即断流、释放 */
+  /**
+   * WSS 断开：全部在途会话立即断流、释放。
+   *
+   * 幂等：ws 的 'error' 与 'close' 会各触发一次，必须短路第二次，
+   * 否则同一次断线会被处理 2 次（down 重复、退避档位被推快、timer 反复重设）。
+   */
   _onDisconnected(reason) {
+    if (this._disconnected) return; // 已处理过，避免 error / close 双触发
+    this._disconnected = true;
     this.ready = false;
+    // 断开后立即清引用：旧连接残留事件不会再次进入本方法
+    this.ws = null;
     this._stopPing();
     for (const session of [...this.sessions.values()]) {
-      session.emit('error', new Error(reason));
+      // 仅在有人监听时发 error：无监听者时 emit('error') 会抛未捕获异常
+      if (session.listenerCount('error') > 0) {
+        session.emit('error', new Error(reason));
+      }
       session.close(reason);
     }
     this.sessions.clear();
@@ -225,7 +259,9 @@ export class WssTunnel extends EventEmitter {
 
     const timer = setTimeout(() => {
       if (session.state !== STATE_OPEN) {
-        session.emit('error', new Error('tunnel handshake timeout'));
+        if (session.listenerCount('error') > 0) {
+          session.emit('error', new Error('tunnel handshake timeout'));
+        }
         session.close('handshake timeout');
       }
     }, this.handshakeTimeoutMs);
@@ -240,6 +276,16 @@ export class WssTunnel extends EventEmitter {
       }
     });
 
+    // 上行半关：通知服务端向目标发送 FIN，但保留会话等待下行
+    session.on('uplink-end', () => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      try {
+        this.ws.send(controlMessage('half-close', { sessionId: id }));
+      } catch {
+        session.close('wss send failed');
+      }
+    });
+
     session.on('open', () => clearTimeout(timer));
     session.on('close', () => {
       clearTimeout(timer);
@@ -249,7 +295,20 @@ export class WssTunnel extends EventEmitter {
       }
     });
 
-    this.ws.send(controlMessage('connect', { sessionId: id, host, port, mode }));
+    try {
+      this.ws.send(controlMessage('connect', { sessionId: id, host, port, mode }));
+    } catch (err) {
+      clearTimeout(timer);
+      // 先摘除本方法注册的监听器，再发 error：避免会话无人监听 error
+      // 时 emit('error') 直接抛出未捕获异常（Node EventEmitter 语义）。
+      session.removeAllListeners();
+      this.sessions.delete(id);
+      if (session.listenerCount('error') > 0) {
+        session.emit('error', new Error(`wss send failed: ${err.message}`));
+      }
+      session.close('wss send failed');
+      return null;
+    }
     return session;
   }
 

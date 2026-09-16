@@ -105,3 +105,49 @@ test('guardTarget：空 host 拒绝', async () => {
   assert.equal((await guardTarget('', async () => [])).ok, false);
   assert.equal((await guardTarget(null, async () => [])).ok, false);
 });
+
+test('IPv4：0.0.0.0/8 被拦截（本机语义地址）', () => {
+  for (const ip of ['0.0.0.0', '0.0.0.1', '0.255.255.255']) {
+    assert.equal(isBlockedIp(ip).blocked, true, ip);
+    assert.equal(isBlockedIp(ip).cidr, '0.0.0.0/8');
+  }
+});
+
+test('IPv4：169.254.0.0/16 被拦截（链路本地 / 云元数据）', () => {
+  for (const ip of ['169.254.0.1', '169.254.169.254', '169.254.255.255']) {
+    assert.equal(isBlockedIp(ip).blocked, true, ip);
+  }
+  assert.equal(isBlockedIp('169.253.0.1').blocked, false);
+  assert.equal(isBlockedIp('169.255.0.1').blocked, false);
+});
+
+test('IPv4：100.64.0.0/10 被拦截（CGNAT），边界外不拦', () => {
+  for (const ip of ['100.64.0.0', '100.64.0.1', '100.127.255.255']) {
+    assert.equal(isBlockedIp(ip).blocked, true, ip);
+  }
+  assert.equal(isBlockedIp('100.63.255.255').blocked, false);
+  assert.equal(isBlockedIp('100.128.0.0').blocked, false);
+});
+
+test('IPv4：224.0.0.0/4 与 240.0.0.0/4 被拦截', () => {
+  assert.equal(isBlockedIp('224.0.0.0').blocked, true);
+  assert.equal(isBlockedIp('239.255.255.255').blocked, true);
+  assert.equal(isBlockedIp('223.255.255.255').blocked, false);
+  assert.equal(isBlockedIp('240.0.0.1').blocked, true);
+  assert.equal(isBlockedIp('255.255.255.255').blocked, true);
+});
+
+test('IPv6：::/128、64:ff9b::/96、2002::/16 被拦截', () => {
+  assert.equal(isBlockedIp('::').blocked, true);
+  assert.equal(isBlockedIp('::').cidr, '::/128');
+  assert.equal(isBlockedIp('64:ff9b::1').blocked, true);
+  assert.equal(isBlockedIp('64:ff9b::192.0.2.1').blocked, true);
+  assert.equal(isBlockedIp('2002::1').blocked, true);
+  assert.equal(isBlockedIp('2002:c000:0201::1').blocked, true);
+});
+
+test('IPv4-mapped IPv6 按 IPv4 语义拦截新增网段', () => {
+  assert.equal(isBlockedIp('::ffff:169.254.169.254').blocked, true);
+  assert.equal(isBlockedIp('::ffff:100.64.0.1').blocked, true);
+  assert.equal(isBlockedIp('::ffff:0.0.0.0').blocked, true);
+});

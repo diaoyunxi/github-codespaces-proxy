@@ -429,3 +429,88 @@ test('CONNECT：客户端在建连完成前发送的数据不丢失', async (t) 
   });
   assert.match(Buffer.concat(chunks).toString(), /ECHO:EARLY-BYTES/);
 });
+
+test('普通明文 HTTP：客户端半关写端后仍能收到完整响应', async (t) => {
+  const env = await setup();
+  t.after(() => env.close());
+
+  const result = await new Promise((resolve, reject) => {
+    const sock = net.connect(env.proxyPort, '127.0.0.1');
+    t.after(() => sock.destroy());
+    const chunks = [];
+    sock.on('connect', () => {
+      sock.write(`GET http://any.public.test:${env.webPort}/half-close HTTP/1.1\r\nHost: any.public.test\r\nConnection: close\r\n\r\n`);
+      // 半关写端：请求发完后不再发数据，但仍在等响应（HTTP/1.0 客户端常见用法）
+      sock.end();
+    });
+    sock.on('data', (d) => chunks.push(d));
+    sock.on('error', reject);
+    sock.on('close', () => resolve(Buffer.concat(chunks).toString()));
+    setTimeout(() => reject(new Error('timeout')), 8000);
+  });
+
+  assert.match(result, /200 OK/);
+  assert.match(result, /WEB-OK/);
+});
+
+test('CONNECT：客户端半关写端后仍能收到完整下行数据', async (t) => {
+  const env = await setup();
+  t.after(() => env.close());
+
+  const result = await new Promise((resolve, reject) => {
+    const sock = net.connect(env.proxyPort, '127.0.0.1');
+    t.after(() => sock.destroy());
+    const chunks = [];
+    let sent = false;
+    sock.on('connect', () => {
+      sock.write(`CONNECT any.public.test:${env.echoPort} HTTP/1.1\r\nHost: x\r\n\r\n`);
+    });
+    sock.on('data', (d) => {
+      chunks.push(d);
+      const text = Buffer.concat(chunks).toString();
+      if (text.includes('Connection Established') && !sent) {
+        sent = true;
+        sock.write('PING');
+        // 半关写端，然后等 echo 的下行回包
+        sock.end();
+      }
+      if (text.includes('ECHO:PING')) resolve(text);
+    });
+    sock.on('error', reject);
+    setTimeout(() => reject(new Error('timeout')), 8000);
+  });
+
+  assert.match(result, /ECHO:PING/);
+});
+
+test('CONNECT：客户端半关后目标关闭，会话及时回收', async (t) => {
+  const env = await setup();
+  t.after(() => env.close());
+
+  const sock = net.connect(env.proxyPort, '127.0.0.1');
+  await new Promise((r) => sock.on('connect', r));
+  sock.write(`CONNECT any.public.test:${env.webPort} HTTP/1.1\r\nHost: x\r\n\r\n`);
+  await new Promise((r) => sock.once('data', r));
+  // 给 web 目标发一个会自行关闭的请求（Connection: close），再半关写端
+  sock.write('GET /bye HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+  sock.end();
+  await waitFor(() => env.tunnel.sessions.size === 0, 5000);
+  assert.equal(env.tunnel.sessions.size, 0);
+  sock.destroy();
+});
+
+test('客户端半关的空闲兜底：无下行数据时会话被回收', async (t) => {
+  const env = await setup();
+  t.after(() => env.close());
+
+  // echo 目标不会主动关闭；客户端半关后不再有下行数据，
+  // 应命中空闲兜底超时（默认 3s）而回收会话
+  const sock = net.connect(env.proxyPort, '127.0.0.1');
+  t.after(() => sock.destroy());
+  await new Promise((r) => sock.on('connect', r));
+  sock.write(`CONNECT any.public.test:${env.echoPort} HTTP/1.1\r\nHost: x\r\n\r\n`);
+  await new Promise((r) => sock.once('data', r));
+  sock.end();
+  await waitFor(() => env.tunnel.sessions.size === 0, 6000);
+  assert.equal(env.tunnel.sessions.size, 0);
+});

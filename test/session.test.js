@@ -46,6 +46,19 @@ function makeConfig(overrides = {}) {
   };
 }
 
+/** 轮询等待条件成立 */
+function waitFor(pred, timeoutMs = 3000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (pred()) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('waitFor timeout'));
+      setTimeout(tick, 20);
+    };
+    tick();
+  });
+}
+
 /** 起一个目标服务器 */
 async function startTarget(handler) {
   const server = net.createServer(handler || ((sock) => sock.on('data', (d) => sock.write(d))));
@@ -304,4 +317,76 @@ test('建连后 connect 超时切换为空闲超时', async (t) => {
   // connectTimeoutMs=5ms 若未切换成 idleTimeout，会话会被误杀
   assert.equal(mgr.stats().sessions, 1, '建连成功后不应因 connectTimeout 被回收');
   assert.equal(mgr.stats().open, 1);
+});
+
+test('half-close：上行 EOF 向目标发 FIN，但保留下行继续读取', async (t) => {
+  // 目标半开：收到 FIN 后仍写回一段数据
+  const halfOpen = net.createServer({ allowHalfOpen: true }, (sock) => {
+    sock.on('end', () => sock.write('AFTER-FIN'));
+  });
+  await new Promise((r) => halfOpen.listen(0, '127.0.0.1', r));
+  t.after(() => halfOpen.close());
+  const halfPort = halfOpen.address().port;
+
+  const ws = fakeWs();
+  const mgr = new SessionManager({ ws, clientIp: '1.2.3.4', config: makeConfig() });
+  mgr.start();
+  t.after(() => mgr.stop());
+
+  await mgr.handleConnect({ sessionId: 1, host: 'example.com', port: halfPort });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(mgr.stats().open, 1);
+
+  mgr.handleHalfClose({ sessionId: 1 });
+  const session = mgr.sessions.get(1);
+  assert.equal(session.uplinkClosed, true, '会话应标记上行已关');
+
+  // 半关后到达的数据帧应被丢弃，不再写给目标
+  assert.equal(session.write(Buffer.from('late')), false);
+
+  // 下行仍应送达客户端
+  await waitFor(() => ws.dataFrames.some((f) => f.payload.toString() === 'AFTER-FIN'), 2000);
+});
+
+test('half-close：未知 / 非法 sessionId 调用不抛异常', async (t) => {
+  const ws = fakeWs();
+  const mgr = new SessionManager({ ws, clientIp: '1.2.3.4', config: makeConfig() });
+  mgr.start();
+  t.after(() => mgr.stop());
+  assert.doesNotThrow(() => mgr.handleHalfClose({ sessionId: 999 }));
+  assert.doesNotThrow(() => mgr.handleHalfClose({}));
+});
+
+test('背压：WSS 缓冲超上限时暂停目标读取，回落后恢复', async (t) => {
+  const ws = fakeWs();
+  const { server, port } = await startTarget((sock) => sock.write('seed'));
+  t.after(() => server.close());
+
+  const mgr = new SessionManager({
+    ws,
+    clientIp: '1.2.3.4',
+    config: makeConfig({ wsBufferedHighWaterMark: 10, wsBufferedLowWaterMark: 2 }),
+  });
+  mgr.start();
+  t.after(() => mgr.stop());
+
+  await mgr.handleConnect({ sessionId: 7, host: 'example.com', port });
+  await new Promise((r) => setTimeout(r, 100));
+  const session = mgr.sessions.get(7);
+
+  let resumeCalled = 0;
+  let pauseCalled = 0;
+  session.socket.pause = () => { pauseCalled += 1; };
+  session.socket.resume = () => { resumeCalled += 1; };
+
+  // 缓冲越过上限 → 暂停
+  ws.bufferedAmount = 100;
+  session._onData(Buffer.from('x'));
+  assert.equal(session._paused, true, '超上限应暂停读取');
+  assert.ok(pauseCalled >= 1);
+
+  // 回落到低水位以下 → 恢复
+  ws.bufferedAmount = 0;
+  await waitFor(() => resumeCalled >= 1, 2000);
+  assert.equal(session._paused, false);
 });

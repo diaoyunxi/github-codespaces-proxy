@@ -40,6 +40,11 @@ export class Session extends EventEmitter {
     this.lastActiveAt = Date.now();
     this.bytesToTarget = 0;
     this.bytesFromTarget = 0;
+    /** 客户端是否已半关上行（不再发送数据） */
+    this.uplinkClosed = false;
+    /** 下行背压：目标 socket 是否因 WSS 缓冲堆积而暂停 */
+    this._paused = false;
+    this._resumeTimer = null;
   }
 
   touch() {
@@ -55,10 +60,24 @@ export class Session extends EventEmitter {
 
   /** WSS 侧收到数据 → 写入目标 socket */
   write(chunk) {
-    if (this.state !== STATE_OPEN || !this.socket) return false;
+    if (this.state !== STATE_OPEN || !this.socket || this.uplinkClosed) return false;
     this.bytesToTarget += chunk.length;
     this.touch();
     return this.socket.write(chunk);
+  }
+
+  /**
+   * 上行 EOF：客户端不再发送数据（半关写端），但仍需接收下行。
+   * 语义等价于向目标 socket 发送 FIN，而不是关闭整个会话。
+   * 此后到达的 write() 一律丢弃（目标已不该再收到数据）。
+   */
+  halfClose() {
+    if (this.state !== STATE_OPEN || !this.socket) return;
+    this.uplinkClosed = true;
+    this.touch();
+    try {
+      this.socket.end();
+    } catch { /* 忽略 */ }
   }
 
   /**
@@ -68,6 +87,10 @@ export class Session extends EventEmitter {
   close(reason = 'closed') {
     if (this.state === STATE_CLOSED) return;
     this.state = STATE_CLOSED;
+    if (this._resumeTimer) {
+      clearTimeout(this._resumeTimer);
+      this._resumeTimer = null;
+    }
     if (this.socket) {
       this.socket.destroy();
       this.socket = null;
@@ -81,7 +104,14 @@ const DEFAULTS = {
   connectTimeoutMs: 10000,
   idleTimeoutMs: 120000,
   maxSessionsPerConnection: 256,
+  /** WebSocket 发送缓冲高水位：超过则暂停读取目标 socket（下行背压） */
+  wsBufferedHighWaterMark: 4 * 1024 * 1024,
+  /** WebSocket 发送缓冲低水位：回落到此值以下恢复读取 */
+  wsBufferedLowWaterMark: 1 * 1024 * 1024,
 };
+
+/** 背压恢复检查的轮询间隔 */
+const BACKPRESSURE_POLL_MS = 20;
 
 /**
  * 单个 WSS 连接的所有会话。
@@ -207,6 +237,7 @@ export class SessionManager {
       onFail(session.state === STATE_OPEN ? 'target idle timeout' : 'target connect timeout'),
     );
     socket.on('error', (err) => onFail(`target socket error: ${err.code || err.message}`));
+    socket.on('end', () => session.touch());
     socket.on('close', () => session.close('target closed'));
 
     session.on('data', (chunk) => {
@@ -215,12 +246,56 @@ export class SessionManager {
         this.ws.send(encodeDataFrame(sessionId, chunk), { binary: true });
       } catch {
         session.close('wss send failed');
+        return;
       }
+      // 下行背压：WSS 发送缓冲堆积（慢速客户端下载大文件）时暂停读取目标，
+      // 避免缓冲无上限增长；回落到低水位后恢复。
+      this._applyBackpressure(session);
     });
     session.on('close', (reason) => {
       this.sessions.delete(sessionId);
       this._send({ type: 'close', sessionId, reason });
     });
+  }
+
+  /**
+   * 根据 WSS 发送缓冲水位，对目标 socket 做暂停 / 恢复（下行背压）。
+   * 仅对处于 open 且有 socket 的会话生效。
+   */
+  _applyBackpressure(session) {
+    const socket = session.socket;
+    if (!socket || socket.destroyed) return;
+    const buffered = this.ws.bufferedAmount ?? 0;
+
+    if (buffered >= this.config.wsBufferedHighWaterMark) {
+      if (!session._paused) {
+        session._paused = true;
+        try { socket.pause(); } catch { /* 忽略 */ }
+      }
+      this._scheduleResume(session);
+    } else if (session._paused && buffered <= this.config.wsBufferedLowWaterMark) {
+      session._paused = false;
+      try { socket.resume(); } catch { /* 忽略 */ }
+    }
+  }
+
+  /** 缓冲回落后恢复读取；会话已关闭则停止轮询 */
+  _scheduleResume(session) {
+    if (session._resumeTimer) return;
+    session._resumeTimer = setTimeout(() => {
+      session._resumeTimer = null;
+      if (session.state === STATE_CLOSED) return;
+      const socket = session.socket;
+      if (!socket || socket.destroyed) return;
+      const buffered = this.ws.bufferedAmount ?? 0;
+      if (buffered <= this.config.wsBufferedLowWaterMark) {
+        session._paused = false;
+        try { socket.resume(); } catch { /* 忽略 */ }
+      } else {
+        this._scheduleResume(session);
+      }
+    }, BACKPRESSURE_POLL_MS);
+    if (session._resumeTimer.unref) session._resumeTimer.unref();
   }
 
   /** 处理来自 WSS 的二进制数据帧 */
@@ -232,6 +307,13 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.write(payload);
+  }
+
+  /** 处理 half-close 控制消息：上行 EOF，保留下行 */
+  handleHalfClose(msg) {
+    if (this.closed) return;
+    const session = this.sessions.get(msg.sessionId);
+    if (session) session.halfClose();
   }
 
   /** 处理 close 控制消息 */

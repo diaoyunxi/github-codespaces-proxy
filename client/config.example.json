@@ -9,5 +9,6 @@
   "reconnectDelayMs": 500,
   "maxReconnectDelayMs": 15000,
   "pingIntervalMs": 25000,
-  "maxSessions": 1024
+  "maxSessions": 1024,
+  "halfCloseIdleMs": 3000
 }

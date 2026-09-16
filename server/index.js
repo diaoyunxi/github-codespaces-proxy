@@ -150,6 +150,9 @@ export function createServer(config = loadConfig()) {
             ws.send(JSON.stringify({ type: 'error', sessionId: msg.sessionId, message: err.message }));
           });
           break;
+        case 'half-close':
+          if (isValidSessionId(msg.sessionId)) manager.handleHalfClose(msg);
+          break;
         case 'close':
           if (isValidSessionId(msg.sessionId)) manager.handleClose(msg);
           break;

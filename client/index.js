@@ -39,6 +39,12 @@ const DEFAULTS = {
   maxSessions: 1024,
   /** 预置 extraCA 证书文件路径（企业自签 CA） */
   caFile: '',
+  /**
+   * 客户端半关写端后的空闲兜底超时（毫秒）。
+   * TCP 无法区分「半关仍在等响应」与「进程已退出」，故以
+   * 「无任何下行数据持续该时长」判定连接已死并回收会话。
+   */
+  halfCloseIdleMs: 3000,
 };
 
 function loadConfig() {
@@ -90,7 +96,11 @@ export function startClient(cfg = loadConfig()) {
 
   tunnel.connect();
 
-  const proxy = createHttpProxy({ tunnel, log: (m) => console.log(`[proxy] ${m}`) });
+  const proxy = createHttpProxy({
+    tunnel,
+    log: (m) => console.log(`[proxy] ${m}`),
+    halfCloseIdleMs: cfg.halfCloseIdleMs,
+  });
   proxy.on('error', (err) => console.error(`[proxy] error: ${err.message}`));
 
   return new Promise((resolve, reject) => {
@@ -103,16 +113,65 @@ export function startClient(cfg = loadConfig()) {
   });
 }
 
-function shutdown({ proxy, tunnel }) {
+/**
+ * 优雅关停。
+ *
+ * 顺序很关键：
+ *   1. 先关隧道 —— 主动向服务端回收所有会话，让在途连接收到 close 而不是被硬切
+ *   2. 再关本地监听 —— 停止接受新连接（不会关闭已建立连接）
+ *   3. 给一个短超时的优雅窗口，等待在途会话自然结束
+ *   4. 最后退出；窗口超时则强制退出
+ *
+ * 去重：连按 Ctrl+C 不应重复执行。
+ */
+const SHUTDOWN_GRACE_MS = 1500;
+let shuttingDown = false;
+
+async function shutdown({ proxy, tunnel }) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log('\n[exit] shutting down ...');
+
+  // 1) 关隧道：服务端据此回收全部会话
   try { tunnel.close(); } catch { /* 忽略 */ }
-  try { proxy.close(); } catch { /* 忽略 */ }
+
+  // 2) 关本地监听，停止接受新连接
+  await new Promise((resolve) => {
+    try {
+      proxy.close(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+
+  // 3) 优雅窗口：给在途会话一点收尾时间，超时则强制退出
+  await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.warn(`[exit] graceful window (${SHUTDOWN_GRACE_MS}ms) elapsed, forcing exit`);
+      resolve();
+    }, SHUTDOWN_GRACE_MS);
+    timer.unref?.();
+    // 若没有活跃连接，事件循环已空，直接结束
+    if (proxy.listening === false && tunnel.sessions.size === 0) {
+      clearTimeout(timer);
+      resolve();
+    }
+  });
+  console.log('[exit] bye');
   process.exit(0);
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (isMain) {
-  const running = await startClient();
-  process.on('SIGINT', () => shutdown(running));
-  process.on('SIGTERM', () => shutdown(running));
+  // 顶层 await 失败要给出友好错误而非未捕获异常
+  // （tunnel.connect() 的失败是事件而非 reject，因此这里主要兜住 listen 失败等）
+  let running;
+  try {
+    running = await startClient();
+  } catch (err) {
+    console.error(`[fatal] 客户端启动失败: ${err.message}`);
+    process.exit(1);
+  }
+  process.on('SIGINT', () => { shutdown(running); });
+  process.on('SIGTERM', () => { shutdown(running); });
 }

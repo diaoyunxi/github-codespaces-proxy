@@ -6,5 +6,7 @@
   "connectTimeoutMs": 10000,
   "idleTimeoutMs": 120000,
   "maxSessionsPerConnection": 256,
-  "maxSessionsPerIp": 512
+  "maxSessionsPerIp": 512,
+  "wsBufferedHighWaterMark": 4194304,
+  "wsBufferedLowWaterMark": 1048576
 }
