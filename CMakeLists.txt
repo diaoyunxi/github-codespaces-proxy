@@ -50,6 +50,12 @@ if(HWP_SHARED_LIB)
   target_link_libraries(hwp_core_shared PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
   if(WIN32)
     target_link_libraries(hwp_core_shared PUBLIC ws2_32 crypt32)
+    # 动态库对外交付名为 hwp_core.dll，但导入库(.lib)不能与静态库 hwp_core.lib 重名，
+    # 否则 Ninja 会报 "multiple rules generate hwp_core.lib"。
+    set_target_properties(hwp_core_shared PROPERTIES
+      RUNTIME_OUTPUT_NAME "hwp_core"     # -> hwp_core.dll
+      ARCHIVE_OUTPUT_NAME "hwp_core_shared")  # -> hwp_core_shared.lib (导入库)
+  else()
     set_target_properties(hwp_core_shared PROPERTIES OUTPUT_NAME "hwp_core")
   endif()
   set_target_properties(hwp_core_shared PROPERTIES
