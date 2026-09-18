@@ -4,7 +4,7 @@
 
 ### 依赖
 
-- Node.js ≥ 18（使用了 `node:` 前缀导入、`--test` 运行器、`fetch` 等现代特性）
+- 无需运行时依赖（C++ 静态链接；Linux 仅依赖 `libssl3` 与 `libc6`）
 - 一张有效 TLS 证书（Let's Encrypt 或商业证书；自签需在客户端配 `caFile`）
 
 ### 配置
@@ -50,7 +50,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/http-over-wss-proxy
-ExecStart=/usr/bin/node server/index.js
+ExecStart=/usr/bin/http-over-wss-server
 Restart=always
 RestartSec=3
 User=proxy
@@ -89,7 +89,7 @@ location / {
 
 ### 依赖
 
-- Node.js ≥ 18
+- 无需运行时依赖（单文件 exe；静态链接 OpenSSL）
 
 ### 配置
 
@@ -121,7 +121,7 @@ location / {
 ```powershell
 # 以管理员身份运行
 $action  = New-ScheduledTaskAction -Execute 'node.exe' `
-           -Argument 'client/index.js' -WorkingDirectory 'C:\proxy\client'
+           -Argument 'src/client/main.cpp' -WorkingDirectory 'C:\proxy\client'
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
 Register-ScheduledTask -TaskName 'http-over-wss-proxy-client' `
@@ -175,7 +175,7 @@ Find-NetRoute -RemoteIPAddress 203.0.113.10 | Select-Object -First 1 IPAddress, 
 
 ### 隧道连不上
 
-1. `npm run client` 日志里若出现 `[tunnel] down: ... (auto reconnecting)`，检查：
+1. `http-over-wss-client --config client/config.json` 日志里若出现 `[tunnel] down: ... (auto reconnecting)`，检查：
    - `serverUrl` 是否是 `wss://` 且路径为 `/`
    - 静态路由是否生效（见上方验证命令）
    - 服务端是否在运行、防火墙 / 安全组是否放行端口
@@ -187,7 +187,7 @@ Find-NetRoute -RemoteIPAddress 203.0.113.10 | Select-Object -First 1 IPAddress, 
 日志 / 客户端返回 `502 Bad Gateway: ... blocked range ...`。
 这是预期行为：服务端只允许访问公网地址（私有、回环、链路本地含云元数据、
 CGNAT、组播、保留网段一律拦截）。
-确需访问内网时，应改 `server/ssrf.js` 的网段表，而不是全局关闭校验。
+确需访问内网时，应改 `src/common/ssrf.cpp` 的网段表，而不是全局关闭校验。
 
 ### 会话数打满
 

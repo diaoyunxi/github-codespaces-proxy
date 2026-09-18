@@ -1,13 +1,20 @@
-node_modules/
-*.log
-.DS_Store
+# 构建产物
+build/
+dist/
+*.o
+*.a
+*.so
+*.dll
+*.exe
+*.deb
+*.zip
 
-# 本地私密配置（含证书路径、服务端地址），只提交 *.example.json
-server/config.json
+# 本地配置（含密钥，禁止提交）
+config.json
 client/config.json
+server/config.json
 
-# 证书与私钥
-*.pem
-*.key
-*.crt
-!test/fixtures/*.pem
+# 编辑器
+.vscode/
+.idea/
+*.swp
