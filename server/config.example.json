@@ -1,6 +1,6 @@
 {
   "port": 8443,
-  "host": "0.0.0.0",
+  "host": "127.0.0.1",
   "tlsCert": "/etc/letsencrypt/live/proxy.example.com/fullchain.pem",
   "tlsKey": "/etc/letsencrypt/live/proxy.example.com/privkey.pem",
   "connectTimeoutMs": 10000,
