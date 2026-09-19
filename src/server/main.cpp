@@ -106,10 +106,12 @@ int toInt(const std::string& s, int def) {
   }
 }
 
-ServerConfig loadConfig() {
+/**
+ * 读取配置：显式传入配置文件路径（为空时回落到环境变量 PROXY_CONFIG / 默认 config.json）。
+ * 不使用 setenv，避免 Windows(MSVC) 无 setenv 导致编译失败。
+ */
+ServerConfig loadConfig(const std::string& file) {
   ServerConfig cfg;
-  const char* envFile = std::getenv("PROXY_CONFIG");
-  const std::string file = envFile ? envFile : "config.json";
   auto kv = parseConfig(file);
   if (kv.count("port")) cfg.port = static_cast<uint16_t>(toInt(kv["port"], cfg.port));
   if (kv.count("host")) cfg.host = kv["host"];
@@ -334,7 +336,9 @@ static void onSignal(int) { g_stopping.store(true); }
 
 int main(int argc, char** argv) {
   socketInitGlobal();
-  ServerConfig cfg = loadConfig();
+  const char* envFile = std::getenv("PROXY_CONFIG");
+  std::string configFile = envFile ? envFile : "config.json";
+  ServerConfig cfg = loadConfig(configFile);
   for (int i = 1; i < argc; i++) {
     const std::string a = argv[i];
     if (a == "--port" && i + 1 < argc) cfg.port = static_cast<uint16_t>(std::stoi(argv[++i]));
@@ -342,9 +346,9 @@ int main(int argc, char** argv) {
     else if (a == "--tls-cert" && i + 1 < argc) cfg.tlsCert = argv[++i];
     else if (a == "--tls-key" && i + 1 < argc) cfg.tlsKey = argv[++i];
     else if (a == "--config" && i + 1 < argc) {
-      // 已由环境变量方式加载，这里重新读取指定文件
-      setenv("PROXY_CONFIG", argv[i + 1], 1);
-      cfg = loadConfig();
+      // 直接以命令行指定的文件重新加载（跨平台，无需 setenv）
+      configFile = argv[i + 1];
+      cfg = loadConfig(configFile);
       i++;
     } else if (a == "--help" || a == "-h") {
       std::fprintf(stdout,
