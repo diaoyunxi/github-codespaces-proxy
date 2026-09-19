@@ -20,9 +20,17 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <basetsd.h>  // SSIZE_T
 using socket_t = SOCKET;
 inline constexpr socket_t kInvalidSocket = INVALID_SOCKET;
+// MSVC 只提供大写 SSIZE_T，没有 POSIX 的 ssize_t；本项目公共接口统一用 ssize_t，
+// 这里补一个平台别名，保证 Windows / Linux 头文件语义一致。
+#ifndef _SSIZE_T_DEFINED
+#define _SSIZE_T_DEFINED
+using ssize_t = SSIZE_T;
+#endif
 #else
+#include <sys/types.h>  // ssize_t
 using socket_t = int;
 inline constexpr socket_t kInvalidSocket = -1;
 #endif

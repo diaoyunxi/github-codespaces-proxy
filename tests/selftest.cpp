@@ -1,6 +1,7 @@
 // 单元自测：帧协议 / SSRF 规则 / WebSocket 握手 / SHA1 / Base64
 #include <cassert>
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 
 #include "../src/common/base64.hpp"

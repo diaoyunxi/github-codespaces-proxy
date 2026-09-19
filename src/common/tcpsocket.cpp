@@ -26,7 +26,6 @@ namespace hwp {
 namespace {
 
 #ifdef _WIN32
-using ssize_t_local = int;
 bool inProgress() {
   const int e = WSAGetLastError();
   return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEINVAL || e == WSAENOTCONN;
