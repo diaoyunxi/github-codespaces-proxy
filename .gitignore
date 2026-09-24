@@ -1,20 +1,33 @@
-# 构建产物
-build/
-dist/
+# Build outputs
+*.obj
 *.o
-*.a
-*.so
+*.lib
 *.dll
 *.exe
-*.deb
-*.zip
+*.pdb
+*.ilk
+*.exp
 
-# 本地配置（含密钥，禁止提交）
-config.json
-client/config.json
-server/config.json
+# Visual Studio / CMake
+.vs/
+*.suo
+*.user
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
 
-# 编辑器
-.vscode/
+# IDE
 .idea/
+.vscode/
 *.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if applicable)
+node_modules/
+*.log
