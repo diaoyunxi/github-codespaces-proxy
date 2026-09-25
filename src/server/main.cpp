@@ -341,7 +341,7 @@ int main(int argc, char** argv) {
   ServerConfig cfg = loadConfig(configFile);
   for (int i = 1; i < argc; i++) {
     const std::string a = argv[i];
-    if (a == "--port" && i + 1 < argc) cfg.port = static_cast<uint16_t>(std::stoi(argv[++i]));
+    if (a == "--port" && i + 1 < argc) cfg.port = static_cast<uint16_t>(toInt(argv[++i], cfg.port));
     else if (a == "--host" && i + 1 < argc) cfg.host = argv[++i];
     else if (a == "--tls-cert" && i + 1 < argc) cfg.tlsCert = argv[++i];
     else if (a == "--tls-key" && i + 1 < argc) cfg.tlsKey = argv[++i];

@@ -30,13 +30,22 @@ bool parseWsUrl(const std::string& url, ParsedUrl& out) {
     if (end == std::string::npos) return false;
     out.host = authority.substr(1, end - 1);
     const auto colon = authority.find(':', end);
-    if (colon != std::string::npos)
-      out.port = static_cast<uint16_t>(std::stoi(authority.substr(colon + 1)));
+    if (colon != std::string::npos) {
+      try {
+        out.port = static_cast<uint16_t>(std::stoi(authority.substr(colon + 1)));
+      } catch (...) {
+        return false;
+      }
+    }
   } else {
     const auto colon = authority.rfind(':');
     if (colon != std::string::npos && authority.find(':') == colon) {
       out.host = authority.substr(0, colon);
-      out.port = static_cast<uint16_t>(std::stoi(authority.substr(colon + 1)));
+      try {
+        out.port = static_cast<uint16_t>(std::stoi(authority.substr(colon + 1)));
+      } catch (...) {
+        return false;
+      }
     } else {
       out.host = authority;
     }
