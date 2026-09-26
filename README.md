@@ -16,7 +16,7 @@
 | 运行依赖 | Node.js ≥ 18 + `ws` | 无（Windows 静态链接，Linux 仅依赖 libssl/libc） |
 | 分发形态 | 源码 / npm | Windows `exe + hwp_core.dll`、Linux `.deb` |
 | 帧协议 | 文本帧 JSON + 二进制帧 | **逐字节对齐**，可与 Node 版互操作 |
-| SSRF 规则 | `server/ssrf.js` | **逐条对齐**（含 IPv4-mapped IPv6 语义） |
+| SSRF 规则 | `src/common/ssrf.cpp` | **逐条对齐**（含 IPv4-mapped IPv6 语义） |
 | 配置项 | `config.json` / 环境变量 | **同名同名同义** |
 | WebSocket | `ws` 库 | 自研极简 RFC6455 实现（含分片、掩码、ping/pong） |
 | TLS | Node `tls` | OpenSSL |
