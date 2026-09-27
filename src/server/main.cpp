@@ -339,12 +339,14 @@ int main(int argc, char** argv) {
   const char* envFile = std::getenv("PROXY_CONFIG");
   std::string configFile = envFile ? envFile : "config.json";
   ServerConfig cfg = loadConfig(configFile);
+  bool noTls = false;
   for (int i = 1; i < argc; i++) {
     const std::string a = argv[i];
     if (a == "--port" && i + 1 < argc) cfg.port = static_cast<uint16_t>(toInt(argv[++i], cfg.port));
     else if (a == "--host" && i + 1 < argc) cfg.host = argv[++i];
     else if (a == "--tls-cert" && i + 1 < argc) cfg.tlsCert = argv[++i];
     else if (a == "--tls-key" && i + 1 < argc) cfg.tlsKey = argv[++i];
+    else if (a == "--no-tls") noTls = true;
     else if (a == "--config" && i + 1 < argc) {
       // 直接以命令行指定的文件重新加载（跨平台，无需 setenv）
       configFile = argv[i + 1];
@@ -353,19 +355,21 @@ int main(int argc, char** argv) {
     } else if (a == "--help" || a == "-h") {
       std::fprintf(stdout,
                    "usage: http-over-wss-server [--host H] [--port P] [--tls-cert FILE] "
-                   "[--tls-key FILE] [--config FILE]\n");
+                   "[--tls-key FILE] [--no-tls] [--config FILE]\n");
       return 0;
     }
   }
 
-  const bool useTls = !cfg.tlsCert.empty() && !cfg.tlsKey.empty();
+  // GitHub Codespaces 等平台由边缘做 TLS 终止：容器内跑明文 ws 即可，无需证书。
+  // 仅当同时给出 tls-cert / tls-key 且未显式 --no-tls 时才启用本机 TLS。
+  const bool useTls = !noTls && !cfg.tlsCert.empty() && !cfg.tlsKey.empty();
   if (useTls) {
     if (!fileExists(cfg.tlsCert) || !fileExists(cfg.tlsKey)) {
       logLine("fatal", "TLS cert/key not found: " + cfg.tlsCert + " / " + cfg.tlsKey);
       return 1;
     }
   } else {
-    logLine("warn", "TLS 未配置，降级为明文 HTTP/WS（仅供内网调试，禁止公网使用）");
+    logLine("warn", "明文 HTTP/WS 模式（无证书）：适用于 GitHub Codespaces 等由边缘完成 TLS 终止的场景");
   }
 
   std::string err;

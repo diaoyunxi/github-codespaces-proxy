@@ -17,8 +17,17 @@ bool parseWsUrl(const std::string& url, ParsedUrl& out) {
   } else if (url.rfind("ws://", 0) == 0) {
     out.tls = false;
     rest = url.substr(5);
+  } else if (url.rfind("https://", 0) == 0) {
+    // GitHub Codespaces 等转发地址通常是 https://，但隧道本身仍是 wss，自动转换
+    out.tls = true;
+    rest = url.substr(8);
+  } else if (url.rfind("http://", 0) == 0) {
+    out.tls = false;
+    rest = url.substr(7);
   } else {
-    return false;
+    // 无 scheme：默认按 wss（边缘 TLS 终止场景），便于直接粘贴 Codespaces 转发地址
+    out.tls = true;
+    rest = url;
   }
   const auto slash = rest.find('/');
   std::string authority = slash == std::string::npos ? rest : rest.substr(0, slash);

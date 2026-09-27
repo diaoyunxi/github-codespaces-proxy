@@ -103,21 +103,27 @@ cmake --build build --parallel
 
 ```bash
 sudo cp server/config.example.json server/config.json
-# 编辑 tlsCert / tlsKey 指向你的证书（Let's Encrypt 或自签）
+# 明文 ws 模式（无证书，适用于 GitHub Codespaces / 由边缘做 TLS 终止）：
 http-over-wss-server --config server/config.json
-# 或命令行覆盖： http-over-wss-server --host 0.0.0.0 --port 8443 \
-#                  --tls-cert /path/fullchain.pem --tls-key /path/privkey.pem
+#   -> 日志出现 [listen] ws://0.0.0.0:8443/ 即成功
+
+# 自托管带证书（Let's Encrypt 或自签）时显式给出证书即可启用本机 TLS：
+# http-over-wss-server --host 0.0.0.0 --port 8443 \
+#   --tls-cert /path/fullchain.pem --tls-key /path/privkey.pem
+#   -> 日志出现 [listen] wss://0.0.0.0:8443/ 即成功
 ```
 
-日志出现 `[listen] wss://0.0.0.0:8443/` 即成功。
+> 是否启用本机 TLS 仅取决于「是否同时给出 `--tls-cert` 与 `--tls-key`」（或配置项 `tlsCert`/`tlsKey`），
+> 也可用 `--no-tls` 强制明文。两者都不给时默认明文 `ws://`。
 
 ### 2. 启动 Windows 客户端
 
 ```powershell
 copy client\config.example.json client\config.json
-# 编辑 serverUrl 为 wss://你的代理服务器/
+# 编辑 serverUrl 为 wss://你的代理服务器/（或 GitHub Codespaces 的 https://...app.github.dev/）
 http-over-wss-client.exe --config client\config.json
 # 或： http-over-wss-client.exe --server wss://proxy.example.com/ --listen-port 8080
+#     http-over-wss-client.exe --server https://<codespace>-8443.app.github.dev/   # https 会自动转 wss
 ```
 
 日志出现 `[proxy] listening on http://127.0.0.1:8080` 即成功。
@@ -141,6 +147,35 @@ http-over-wss-client.exe --config client\config.json
 .\scripts\windows-remove-route.ps1 -ServerIp 203.0.113.10
 ```
 
+## 在 GitHub Codespaces 上部署（零证书）
+
+GitHub Codespaces 的端口转发**由 GitHub 边缘完成 TLS 终止**：你在容器里看到的是明文 HTTP/WS，
+证书完全不用本程序管。因此服务端跑明文 `ws://`、客户端用 `wss://` 连 Codespaces 转发地址即可。
+
+1. 在 codespace 里构建并启动服务端（**不配证书**，绑定 `0.0.0.0` 才能被转发命中）：
+
+   ```bash
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+   cmake --build build --parallel
+   ./build/http-over-wss-server --host 0.0.0.0 --port 8443
+   # 日志： [listen] ws://0.0.0.0:8443/
+   ```
+
+2. 在 Codespaces 面板把 **8443 端口设为 Public 或 Private** 并复制转发地址，
+   形如 `https://<随机串>-8443.app.github.dev/`（这就是客户端要连的地址）。
+
+3. Windows 客户端连接（注意用 `wss://` 或 `https://` 前缀，**不要**用 `http://`）：
+
+   ```powershell
+   .\http-over-wss-client.exe --server https://<随机串>-8443.app.github.dev/ --no-update
+   # 日志： [proxy] listening on http://127.0.0.1:8080
+   ```
+
+4. 系统代理填 `127.0.0.1:8080`，并（如有需要）把「本机 → Codespaces 转发地址的 IP」加静态路由豁免。
+
+> 说明：客户端给的是 `wss://`（或 `https://`，程序会自动转成 `wss://`），TLS 在 GitHub 边缘完成；
+> 服务端在容器内只跑明文 `ws://`，所以**两端都不需要任何证书文件**。
+
 ## 命令行参数
 
 ### 服务端 `http-over-wss-server`
@@ -149,7 +184,8 @@ http-over-wss-client.exe --config client\config.json
 | --- | --- |
 | `--host H` | 监听地址，默认 `0.0.0.0` |
 | `--port P` | 监听端口，默认 `8443` |
-| `--tls-cert FILE` / `--tls-key FILE` | 同时给出才启用 TLS，否则降级明文 WS（仅内网调试） |
+| `--tls-cert FILE` / `--tls-key FILE` | 同时给出才启用本机 TLS；都不给则明文 `ws://`（适用于 Codespaces 等边缘 TLS 场景） |
+| `--no-tls` | 强制明文 `ws://`，即便配置了证书也忽略 |
 | `--config FILE` | 配置文件路径，默认 `config.json` |
 
 环境变量：`PROXY_HOST` / `PROXY_PORT` / `PROXY_TLS_CERT` / `PROXY_TLS_KEY` / `PROXY_CONFIG`。

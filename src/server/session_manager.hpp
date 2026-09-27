@@ -25,7 +25,7 @@
 namespace hwp {
 
 struct ServerConfig {
-  std::string host = "127.0.0.1";  // 默认仅本地监听，生产环境如需对外暴露请配合反向代理使用
+  std::string host = "0.0.0.0";  // 默认监听所有网卡：GitHub Codespaces 端口转发需要绑定容器对外地址
   uint16_t port = 8443;
   std::string tlsCert;
   std::string tlsKey;

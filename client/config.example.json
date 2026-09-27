@@ -1,7 +1,7 @@
 {
   "listenHost": "127.0.0.1",
   "listenPort": 8080,
-  "serverUrl": "wss://proxy.example.com/",
+  "serverUrl": "wss://<你的codespace>-8443.app.github.dev/",
   "rejectUnauthorized": true,
   "caFile": "",
   "connectTimeoutMs": 10000,
