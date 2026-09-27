@@ -17,9 +17,11 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include "../common/tcpsocket.hpp"
 #include "../common/util.hpp"
+#include "../common/updater.hpp"
 #include "local_proxy.hpp"
 #include "tunnel.hpp"
 
@@ -105,6 +107,9 @@ struct ClientConfig {
   int maxSessions = 1024;
   std::string caFile;
   int halfCloseIdleMs = 3000;
+  // 自更新相关
+  std::string updateRepo = "diaoyunxi/github-codespaces-proxy";
+  bool updateEnabled = true;
 };
 
 ClientConfig loadConfig(const std::string& defaultPath) {
@@ -124,10 +129,13 @@ ClientConfig loadConfig(const std::string& defaultPath) {
   if (kv.count("maxSessions")) cfg.maxSessions = toInt(kv["maxSessions"], cfg.maxSessions);
   if (kv.count("caFile")) cfg.caFile = kv["caFile"];
   if (kv.count("halfCloseIdleMs")) cfg.halfCloseIdleMs = toInt(kv["halfCloseIdleMs"], cfg.halfCloseIdleMs);
+  if (kv.count("updateRepo")) cfg.updateRepo = kv["updateRepo"];
+  if (kv.count("updateEnabled")) cfg.updateEnabled = (kv["updateEnabled"] != "false");
 
   if (const char* v = std::getenv("PROXY_SERVER_URL")) cfg.serverUrl = v;
   if (const char* v = std::getenv("PROXY_LISTEN_PORT")) cfg.listenPort = static_cast<uint16_t>(toInt(v, cfg.listenPort));
   if (const char* v = std::getenv("PROXY_LISTEN_HOST")) cfg.listenHost = v;
+  if (const char* v = std::getenv("PROXY_UPDATE_REPO")) cfg.updateRepo = v;
   return cfg;
 }
 
@@ -147,12 +155,24 @@ int main(int argc, char** argv) {
     else if (a == "--ca" && i + 1 < argc) cfg.caFile = argv[++i];
     else if (a == "--insecure") cfg.rejectUnauthorized = false;
     else if (a == "--config" && i + 1 < argc) cfg = loadConfig(argv[++i]);
+    else if (a == "--no-update") cfg.updateEnabled = false;
+    else if (a == "--update-repo" && i + 1 < argc) cfg.updateRepo = argv[++i];
     else if (a == "--help" || a == "-h") {
       std::fprintf(stdout,
                    "usage: http-over-wss-client [--server wss://host/] [--listen-host H] "
-                   "[--listen-port P] [--ca FILE] [--insecure] [--config FILE]\n");
+                   "[--listen-port P] [--ca FILE] [--insecure] [--config FILE] "
+                   "[--update-repo owner/repo] [--no-update]\n");
       return 0;
     }
+  }
+
+  // 启动后在后台线程检查 GitHub Release：有新版本则下载、替换并重启自身。
+  // 放在代理启动之前、且在配置最终确定之后，避免阻塞前台代理。
+  if (cfg.updateEnabled) {
+    std::thread([](const std::string& ver, const std::string& repo, const std::string& ca,
+                   int ac, char** av) {
+      hwp::maybeSelfUpdate(ver, repo, ca, ac, av);
+    }, std::string(HWP_VERSION), cfg.updateRepo, cfg.caFile, argc, argv).detach();
   }
 
   TunnelOptions topts;

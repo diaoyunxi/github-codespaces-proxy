@@ -10,5 +10,7 @@
   "maxReconnectDelayMs": 15000,
   "pingIntervalMs": 25000,
   "maxSessions": 1024,
-  "halfCloseIdleMs": 3000
+  "halfCloseIdleMs": 3000,
+  "updateRepo": "diaoyunxi/github-codespaces-proxy",
+  "updateEnabled": true
 }

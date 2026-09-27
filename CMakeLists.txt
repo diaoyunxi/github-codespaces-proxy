@@ -33,6 +33,7 @@ set(HWP_CORE_SOURCES
   src/common/tcpsocket.cpp
   src/common/stream.cpp
   src/common/websocket.cpp
+  src/common/updater.cpp
 )
 
 # ---- 核心静态库 ----
@@ -40,7 +41,7 @@ add_library(hwp_core STATIC ${HWP_CORE_SOURCES})
 target_include_directories(hwp_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(hwp_core PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 if(WIN32)
-  target_link_libraries(hwp_core PUBLIC ws2_32 crypt32)
+  target_link_libraries(hwp_core PUBLIC ws2_32 crypt32 winhttp)
 endif()
 
 # ---- 核心动态库（Windows 上的配套 DLL；Linux 上为 .so）----
@@ -49,7 +50,7 @@ if(HWP_SHARED_LIB)
   target_include_directories(hwp_core_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_link_libraries(hwp_core_shared PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
   if(WIN32)
-    target_link_libraries(hwp_core_shared PUBLIC ws2_32 crypt32)
+    target_link_libraries(hwp_core_shared PUBLIC ws2_32 crypt32 winhttp)
     # 动态库对外交付名为 hwp_core.dll，但导入库(.lib)不能与静态库 hwp_core.lib 重名，
     # 否则 Ninja 会报 "multiple rules generate hwp_core.lib"。
     set_target_properties(hwp_core_shared PROPERTIES
@@ -66,6 +67,7 @@ endif()
 # ---- 服务端可执行文件 ----
 add_executable(http-over-wss-server src/server/main.cpp src/server/session_manager.cpp)
 target_link_libraries(http-over-wss-server PRIVATE hwp_core)
+target_compile_definitions(http-over-wss-server PRIVATE HWP_VERSION="${PROJECT_VERSION}")
 
 # ---- 客户端可执行文件 ----
 add_executable(http-over-wss-client
@@ -73,6 +75,7 @@ add_executable(http-over-wss-client
   src/client/tunnel.cpp
   src/client/local_proxy.cpp)
 target_link_libraries(http-over-wss-client PRIVATE hwp_core)
+target_compile_definitions(http-over-wss-client PRIVATE HWP_VERSION="${PROJECT_VERSION}")
 
 # ---- Release 优化 ----
 if(NOT MSVC)
