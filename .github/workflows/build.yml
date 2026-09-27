@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
 
@@ -16,6 +15,7 @@ jobs:
   # ------------------------------------------------------------------
   linux-amd64:
     name: Linux amd64 (.deb)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +53,7 @@ jobs:
   # ------------------------------------------------------------------
   windows-amd64:
     name: Windows amd64 (exe + dll)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -118,24 +119,56 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------
-  # 发布：打 tag 时把 deb 与 Windows zip 挂到 Release
+  # 发布：push 到 main/master 时，从 VERSION 读取版本号，
+  # 自动建 tag 并发布 Linux .deb 与 Windows zip 资产。
+  # 若对应 tag 已存在（说明该版本已发布过）则跳过，避免重复发布。
   # ------------------------------------------------------------------
   release:
     name: Release assets
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: [ linux-amd64, windows-amd64 ]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - name: Read VERSION and compute tag
+        run: |
+          VERSION="$(cat VERSION | tr -d '[:space:]')"
+          TAG="v${VERSION}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "Version: ${VERSION}  Tag: ${TAG}"
+
+      - name: Create git tag if missing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --tags --exit-code origin "refs/tags/${TAG}"; then
+            echo "Tag ${TAG} already exists, skip creating and publishing."
+            echo "TAG_CREATED=false" >> "$GITHUB_ENV"
+          else
+            git tag "${TAG}"
+            git push origin "${TAG}"
+            echo "TAG_CREATED=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download artifacts
+        if: env.TAG_CREATED == 'true'
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
       - name: Show artifacts
+        if: env.TAG_CREATED == 'true'
         run: find artifacts -type f -printf '%p (%s bytes)\n'
 
       - name: Publish release
+        if: env.TAG_CREATED == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           files: |
             artifacts/linux-amd64-deb/*.deb
             artifacts/windows-amd64-exe-dll/*.zip
