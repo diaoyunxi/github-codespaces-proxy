@@ -1,36 +1,41 @@
-# 构建与开发速查
+# 贡献指南
+
+感谢你对 github-codespaces-proxy 项目的关注！
+
+## 开发环境
+
+- **编译器：** GCC 11+ 或 Clang 14+（C++17）
+- **构建系统：** CMake 3.16+
+- **平台：** Linux（主要）、Windows（可选）
+
+## 构建步骤
 
 ```bash
-# Linux
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DHWP_BUILD_E2E=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure     # 单元 + 端到端
-cd build && cpack -G DEB                        # 打包 .deb
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
 ```
 
-Windows（MSVC + vcpkg）：
+## 代码规范
 
-```powershell
-vcpkg install openssl:x64-windows-static
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
-  -DVCPKG_TARGET_TRIPLET=x64-windows-static
-cmake --build build --parallel
-```
+- C++17 标准
+- 使用 `.editorconfig` 中定义的缩进和格式
+- 所有公共 API 需添加 Doxygen 风格注释
+- 错误处理使用返回值或 `std::optional`，避免异常
+- 网络相关代码需考虑 SSRF 防护（参考 `ssrf.cpp`）
 
-## 代码结构约定
+## 安全注意事项
 
-- `src/common/` 不依赖 `src/server` 与 `src/client`，可单独复用。
-- `WebSocket` 只依赖 `Stream` 抽象，因此 `ws://` 与 `wss://` 共用同一套帧编解码。
-- 帧协议 / SSRF 规则的任何改动都应同步更新 `tests/selftest.cpp`。
-- 与原 Node 版的行为差异视为 **Bug**（除分发形态外），协议必须保持逐字节兼容。
+本项目处理网络代理流量，修改时请特别注意：
 
-## 测试要求
+- SSRF 防护规则（`src/common/ssrf.cpp`）的完整性
+- WebSocket 协议解析的边界检查
+- TCP 连接的生命周期管理
+- 缓冲区操作（`memcpy`/`read`）的长度校验
 
-- 新增 SSRF 网段：在 `src/common/ssrf.cpp` 的表里加，并在 `tests/selftest.cpp` 补正反用例。
-- 涉及链路行为的改动：跑 `-DHWP_BUILD_E2E=ON` 的 `ctest`。
+## 提交 Pull Request
 
-## 已知取舍
-
-- 未实现 `permessage-deflate` 压缩扩展（本协议无需压缩，数据帧本就零额外开销）。
-- WebSocket 发送为阻塞写，未做异步发送队列；下行背压通过客户端读循环的自然节流实现。
+1. Fork 本仓库并创建功能分支
+2. 确保编译通过且无警告
+3. 如涉及安全相关修改，请在 PR 描述中说明威胁模型
+4. 遵循 Conventional Commits 规范提交
