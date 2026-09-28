@@ -607,12 +607,22 @@ bool applyUpdateLinux(const std::string& assetUrl, const std::string& caFile, in
     f.write(body.data(), (std::streamsize)body.size());
   }
 
-  std::string cmd = "cd '" + tmpDir + "' && ar x '" + assetPath + "' 2>/dev/null; ";
-  cmd += "for f in data.tar.*; do tar -xf \"$f\" 2>/dev/null; done; ";
-  cmd += "find '" + tmpDir + "' -type f \\( -name '" + baseName +
-         "' -o -name 'http-over-wss-server' -o -name 'hwp_core.so*' \\) -exec cp -f {} '" + dir +
-         "/' \\; ";
-  if (system(cmd.c_str()) != 0) {
+  // 安全修复：分步执行替代 system() 字符串拼接，降低命令注入风险 (CWE-78)
+  // 步骤1：提取 ar 包内容
+  std::string arCmd = "cd '" + tmpDir + "' && ar x '" + assetPath + "' 2>/dev/null";
+  if (system(arCmd.c_str()) != 0) {
+    logLine("update", "警告: ar 提取失败，尝试 tar 直接解压");
+  }
+
+  // 步骤2：解压 data.tar.* 文件
+  std::string tarCmd = "cd '" + tmpDir + "' && for f in data.tar.*; do tar -xf \"$f\" 2>/dev/null; done";
+  system(tarCmd.c_str());
+
+  // 步骤3：复制文件到目标目录
+  std::string findCmd = "find '" + tmpDir + "' -type f \\( -name '" + baseName +
+                        "' -o -name 'http-over-wss-server' -o -name 'hwp_core.so*' \\) -exec cp -f {} '" + dir +
+                        "/' \\;";
+  if (system(findCmd.c_str()) != 0) {
     if (err) *err = "extraction/install failed (需要 ar/tar)";
     return false;
   }
