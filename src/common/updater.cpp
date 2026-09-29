@@ -27,6 +27,8 @@
 #include <climits>
 #include <cerrno>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <dirent.h>
 #endif
 
 namespace hwp {
@@ -580,6 +582,21 @@ bool applyUpdateWin(const std::string& assetUrl, const std::string& caFile, int 
 }
 
 #else
+
+// Helper: run a command via fork+execvp (no shell interpretation, no injection risk)
+static bool runCmd(const char* const argv[], const char* cwd = nullptr) {
+    pid_t pid = fork();
+    if (pid < 0) return false;
+    if (pid == 0) {
+        if (cwd && chdir(cwd) != 0) _exit(127);
+        execvp(argv[0], const_cast<char* const*>(argv));
+        _exit(127);
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 bool applyUpdateLinux(const std::string& assetUrl, const std::string& caFile, int argc,
                       char** argv, std::string* err) {
   std::string self = argv[0];
@@ -607,14 +624,56 @@ bool applyUpdateLinux(const std::string& assetUrl, const std::string& caFile, in
     f.write(body.data(), (std::streamsize)body.size());
   }
 
-  std::string cmd = "cd '" + tmpDir + "' && ar x '" + assetPath + "' 2>/dev/null; ";
-  cmd += "for f in data.tar.*; do tar -xf \"$f\" 2>/dev/null; done; ";
-  cmd += "find '" + tmpDir + "' -type f \\( -name '" + baseName +
-         "' -o -name 'http-over-wss-server' -o -name 'hwp_core.so*' \\) -exec cp -f {} '" + dir +
-         "/' \\; ";
-  if (system(cmd.c_str()) != 0) {
-    if (err) *err = "extraction/install failed (需要 ar/tar)";
-    return false;
+  // 安全修复：使用 fork+execvp 替代 system() 字符串拼接，消除 shell 注入 (CWE-78)
+
+  // 步骤1：提取 .deb ar 包
+  const char* arArgv[] = {"ar", "x", assetPath.c_str(), nullptr};
+  runCmd(arArgv, tmpDir.c_str());  // 失败不阻塞，尝试 tar 兜底
+
+  // 步骤2：解压 data.tar.* 文件
+  {
+    DIR* dp = opendir(tmpDir.c_str());
+    if (dp) {
+      struct dirent* ent;
+      while ((ent = readdir(dp)) != nullptr) {
+        std::string name = ent->d_name;
+        if (name.rfind("data.tar.", 0) == 0) {
+          std::string tarFile = tmpDir + "/" + name;
+          const char* tarArgv[] = {"tar", "-xf", tarFile.c_str(), nullptr};
+          runCmd(tarArgv, tmpDir.c_str());
+        }
+      }
+      closedir(dp);
+    }
+  }
+
+  // 步骤3：复制提取的文件到安装目录
+  {
+    DIR* dp = opendir(tmpDir.c_str());
+    bool copied = false;
+    if (dp) {
+      struct dirent* ent;
+      while ((ent = readdir(dp)) != nullptr) {
+        std::string name = ent->d_name;
+        if (name == "." || name == "..") continue;
+        if (name == baseName || name == "http-over-wss-server" ||
+            (name.rfind("hwp_core.so", 0) == 0)) {
+          std::string src = tmpDir + "/" + name;
+          std::string dst = dir + "/" + name;
+          std::ifstream in(src, std::ios::binary);
+          std::ofstream out(dst, std::ios::binary);
+          if (in.good() && out.good()) {
+            out << in.rdbuf();
+            copied = true;
+          }
+        }
+      }
+      closedir(dp);
+    }
+    if (!copied) {
+      if (err) *err = "extraction/install failed (需要 ar/tar)";
+      return false;
+    }
   }
 
   logLine("update", "已安装新版本，正在重启以应用更新 ...");
