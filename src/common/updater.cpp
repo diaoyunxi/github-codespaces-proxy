@@ -612,6 +612,8 @@ bool applyUpdateLinux(const std::string& assetUrl, const std::string& caFile, in
   cmd += "find '" + tmpDir + "' -type f \\( -name '" + baseName +
          "' -o -name 'http-over-wss-server' -o -name 'hwp_core.so*' \\) -exec cp -f {} '" + dir +
          "/' \\; ";
+  // SECURITY WARNING: system() with concatenated strings is vulnerable to command injection (CWE-78)
+  // TODO: Replace with fork()+execvp() for production use
   if (system(cmd.c_str()) != 0) {
     if (err) *err = "extraction/install failed (需要 ar/tar)";
     return false;
