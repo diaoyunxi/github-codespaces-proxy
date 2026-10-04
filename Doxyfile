@@ -1,0 +1,12 @@
+# Doxygen configuration for github-codespaces-proxy
+PROJECT_NAME           = "GitHub Codespaces Proxy"
+PROJECT_NUMBER         = 1.0.0
+OUTPUT_DIRECTORY       = docs
+INPUT                  = src
+FILE_PATTERNS          = *.cpp *.h *.hpp
+RECURSIVE              = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HAVE_DOT               = NO
