@@ -1,41 +1,27 @@
-# 贡献指南
+# Contributing
 
-感谢你对 github-codespaces-proxy 项目的关注！
+## Development Setup
 
-## 开发环境
+### Requirements
+- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
+- CMake 3.14+ (if applicable)
 
-- **编译器：** GCC 11+ 或 Clang 14+（C++17）
-- **构建系统：** CMake 3.16+
-- **平台：** Linux（主要）、Windows（可选）
+## How to Contribute
 
-## 构建步骤
+1. Fork and create a branch
+2. Follow the existing C++ coding style
+3. Ensure code compiles without warnings (`-Wall -Wextra`)
+4. Add tests for new functionality
+5. Submit a PR
 
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+### Code Style
+- Use modern C++ (C++17+)
+- Prefer RAII and smart pointers
+- Use `std::string` over C strings
+- Avoid raw `new`/`delete`
+- Prefer `constexpr` over `#define`
+
+### Commit Format
 ```
-
-## 代码规范
-
-- C++17 标准
-- 使用 `.editorconfig` 中定义的缩进和格式
-- 所有公共 API 需添加 Doxygen 风格注释
-- 错误处理使用返回值或 `std::optional`，避免异常
-- 网络相关代码需考虑 SSRF 防护（参考 `ssrf.cpp`）
-
-## 安全注意事项
-
-本项目处理网络代理流量，修改时请特别注意：
-
-- SSRF 防护规则（`src/common/ssrf.cpp`）的完整性
-- WebSocket 协议解析的边界检查
-- TCP 连接的生命周期管理
-- 缓冲区操作（`memcpy`/`read`）的长度校验
-
-## 提交 Pull Request
-
-1. Fork 本仓库并创建功能分支
-2. 确保编译通过且无警告
-3. 如涉及安全相关修改，请在 PR 描述中说明威胁模型
-4. 遵循 Conventional Commits 规范提交
+type(module): description
+```
