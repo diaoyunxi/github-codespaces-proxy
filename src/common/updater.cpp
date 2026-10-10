@@ -302,7 +302,7 @@ std::string winHttpsGet(const std::string& url, std::string* err) {
       WinHttpCloseHandle(hSession);
       return "";
     }
-    HINTERNET hReq = WinHttpOpenRequest(hConnect, L"GET", u.path.c_str(), NULL,
+    HINTERNET hReq = WinHttpOpenRequest(hConnect, L"GET", u.path.c_str(), nullptr,
                                         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                         WINHTTP_FLAG_SECURE);
     if (!hReq) {
@@ -312,14 +312,14 @@ std::string winHttpsGet(const std::string& url, std::string* err) {
       return "";
     }
     std::wstring headers = L"User-Agent: hwp-updater/1.0\r\nAccept: */*\r\n";
-    if (!WinHttpSendRequest(hReq, headers.c_str(), (DWORD)headers.size(), NULL, 0, 0, 0)) {
+    if (!WinHttpSendRequest(hReq, headers.c_str(), (DWORD)headers.size(), nullptr, 0, 0, 0)) {
       WinHttpCloseHandle(hReq);
       WinHttpCloseHandle(hConnect);
       if (err) *err = "WinHttpSendRequest failed";
       WinHttpCloseHandle(hSession);
       return "";
     }
-    if (!WinHttpReceiveResponse(hReq, NULL)) {
+    if (!WinHttpReceiveResponse(hReq, nullptr)) {
       WinHttpCloseHandle(hReq);
       WinHttpCloseHandle(hConnect);
       if (err) *err = "WinHttpReceiveResponse failed";
@@ -327,14 +327,14 @@ std::string winHttpsGet(const std::string& url, std::string* err) {
       return "";
     }
     DWORD status = 0, sz = sizeof(status);
-    WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, NULL,
-                        &status, &sz, NULL);
+    WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr,
+                        &status, &sz, nullptr);
     if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
       DWORD len = 0;
-      WinHttpQueryHeaders(hReq, WINHTTP_QUERY_LOCATION, NULL, NULL, &len, NULL);
+      WinHttpQueryHeaders(hReq, WINHTTP_QUERY_LOCATION, nullptr, nullptr, &len, nullptr);
       if (len) {
         std::wstring loc(len / sizeof(wchar_t), 0);
-        WinHttpQueryHeaders(hReq, WINHTTP_QUERY_LOCATION, NULL, (LPVOID)loc.data(), &len, NULL);
+        WinHttpQueryHeaders(hReq, WINHTTP_QUERY_LOCATION, nullptr, (LPVOID)loc.data(), &len, nullptr);
         if (!loc.empty() && loc.back() == 0) loc.pop_back();  // 去掉末尾 NUL
         std::string locUtf8 = toUtf8(loc);
         if (locUtf8.find("://") == std::string::npos) {
@@ -501,7 +501,7 @@ std::string escapeSingle(const std::string& s) {
 // 返回 self 完整路径
 std::string getSelfPath() {
   std::wstring buf(4096, 0);
-  DWORD n = GetModuleFileNameW(NULL, &buf[0], (DWORD)buf.size());
+  DWORD n = GetModuleFileNameW(nullptr, &buf[0], (DWORD)buf.size());
   if (n == 0) return "";
   buf.resize(n);
   return toUtf8(buf);
@@ -520,7 +520,7 @@ bool applyUpdateWin(const std::string& assetUrl, const std::string& caFile, int 
   std::string tmpRoot = toUtf8(std::wstring(tmp));
   if (!tmpRoot.empty() && tmpRoot.back() != '\\') tmpRoot += '\\';
   std::string tmpDir = tmpRoot + "hwp_update_" + std::to_string(GetCurrentProcessId());
-  CreateDirectoryA(tmpDir.c_str(), NULL);
+  CreateDirectoryA(tmpDir.c_str(), nullptr);
 
   std::string zipPath = tmpDir + "\\asset.zip";
   std::string body = httpsGet(assetUrl, caFile, err);
@@ -565,8 +565,8 @@ bool applyUpdateWin(const std::string& assetUrl, const std::string& caFile, int 
   PROCESS_INFORMATION pi;
   std::memset(&si, 0, sizeof(si));
   si.cb = sizeof(si);
-  if (!CreateProcessW(NULL, &cmd[0], NULL, NULL, FALSE,
-                      CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+  if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE,
+                      CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
     if (err) *err = "failed to launch updater script";
     return false;
   }
