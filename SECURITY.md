@@ -4,17 +4,21 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x     | :white_check_mark: |
-| < 1.0   | :x:                |
+| Latest  | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
-Please report security vulnerabilities by opening a private security advisory on GitHub.
+1. **Do NOT open a public issue** for security vulnerabilities
+2. Use GitHub's [private vulnerability reporting](https://github.com/diaoyunxi/) feature
+3. Include detailed description and reproduction steps
 
-## Security Considerations
+### Response Timeline
+- **48h**: Acknowledgment
+- **7 days**: Assessment
+- **30 days**: Critical fix
 
-This tool creates a proxy tunnel to GitHub Codespaces. Users should:
-- Never expose the local proxy port to the internet
-- Use strong authentication tokens
-- Verify TLS certificates
-- Run in isolated environments when possible
+### Scope
+- Proxy authentication bypass
+- TLS/SSL configuration weaknesses
+- Network-level vulnerabilities
+- Memory safety issues in C++ code
