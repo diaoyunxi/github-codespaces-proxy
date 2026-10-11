@@ -87,7 +87,7 @@ std::shared_ptr<TlsStream> TlsStream::serverHandshake(std::shared_ptr<TcpSocket>
     SSL_free(ssl);
     return nullptr;
   }
-  auto t = std::shared_ptr<TlsStream>(new TlsStream());
+  auto t = std::make_shared<TlsStream>();
   t->ssl_ = ssl;
   t->sock_ = std::move(sock);
   return t;
@@ -136,7 +136,7 @@ std::shared_ptr<TlsStream> TlsStream::clientHandshake(std::shared_ptr<TcpSocket>
     SSL_free(ssl);
     return nullptr;
   }
-  auto t = std::shared_ptr<TlsStream>(new TlsStream());
+  auto t = std::make_shared<TlsStream>();
   t->ssl_ = ssl;
   t->sock_ = std::move(sock);
   return t;

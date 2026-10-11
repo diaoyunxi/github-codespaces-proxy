@@ -167,7 +167,7 @@ bool parseSockAddr(const std::string& host, uint16_t port, void* outStorage, int
 TcpSocket::~TcpSocket() { close(); }
 
 std::shared_ptr<TcpSocket> TcpSocket::adopt(socket_t fd) {
-  auto s = std::shared_ptr<TcpSocket>(new TcpSocket(fd));
+  auto s = std::make_shared<TcpSocket>(fd);
   sockaddr_storage ss{};
   socklen_t l = sizeof(ss);
   if (getpeername(fd, reinterpret_cast<sockaddr*>(&ss), &l) == 0)
@@ -301,7 +301,7 @@ std::shared_ptr<TcpSocket> TcpSocket::acceptConn(int timeoutMs) {
   socklen_t l = sizeof(ss);
   socket_t c = ::accept(fd_, reinterpret_cast<sockaddr*>(&ss), &l);
   if (c == kInvalidSocket) return nullptr;
-  auto s = std::shared_ptr<TcpSocket>(new TcpSocket(c));
+  auto s = std::make_shared<TcpSocket>(c);
   s->peer_ = sockaddrToString(&ss, l);
   return s;
 }
