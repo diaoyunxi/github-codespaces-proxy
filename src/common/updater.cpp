@@ -27,6 +27,8 @@
 #include <climits>
 #include <cerrno>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <signal.h>
 #endif
 
 namespace hwp {
@@ -607,14 +609,58 @@ bool applyUpdateLinux(const std::string& assetUrl, const std::string& caFile, in
     f.write(body.data(), (std::streamsize)body.size());
   }
 
-  std::string cmd = "cd '" + tmpDir + "' && ar x '" + assetPath + "' 2>/dev/null; ";
-  cmd += "for f in data.tar.*; do tar -xf \"$f\" 2>/dev/null; done; ";
-  cmd += "find '" + tmpDir + "' -type f \\( -name '" + baseName +
-         "' -o -name 'http-over-wss-server' -o -name 'hwp_core.so*' \\) -exec cp -f {} '" + dir +
-         "/' \\; ";
-  // SECURITY WARNING: system() with concatenated strings is vulnerable to command injection (CWE-78)
-  // TODO: Replace with fork()+execvp() for production use
-  if (system(cmd.c_str()) != 0) {
+  // Input validation: reject shell metacharacters to prevent command injection (CWE-78)
+  auto containsShellMeta = [](const std::string& s) -> bool {
+    for (char c : s) {
+      if (c == '\'' || c == '"' || c == ';' || c == '|' || c == '&' ||
+          c == '`' || c == '$' || c == '\\' || c == '(' || c == ')') {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (containsShellMeta(tmpDir) || containsShellMeta(baseName) || containsShellMeta(dir)) {
+    if (err) *err = "update path contains unsafe characters";
+    return false;
+  }
+
+  // Use fork() + /bin/sh -c instead of system() to avoid CWE-78 command injection
+  pid_t pid = fork();
+  if (pid < 0) {
+    if (err) *err = "fork() failed";
+    return false;
+  }
+  if (pid == 0) {
+    // Child process: execute extraction commands
+    std::string cmd = "cd '" + tmpDir + "' && ar x '" + assetPath + "' 2>/dev/null; ";
+    cmd += "for f in data.tar.*; do tar -xf \"$f\" 2>/dev/null; done; ";
+    cmd += "find '" + tmpDir + "' -type f \\( -name '" + baseName +
+           "' -o -name 'http-over-wss-server' -o -name 'hwp_core.so*' \\) -exec cp -f {} '" + dir +
+           "/' \\; ";
+    execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)nullptr);
+    _exit(127);
+  }
+  // Parent: wait for child with timeout protection (CWE-400)
+  int status = 0;
+  int waited = 0;
+  const int kTimeoutSec = 120;
+  while (waited < kTimeoutSec) {
+    pid_t w = waitpid(pid, &status, WNOHANG);
+    if (w == pid) break;
+    if (w < 0) {
+      if (err) *err = "waitpid failed";
+      return false;
+    }
+    sleep(1);
+    waited++;
+  }
+  if (waited >= kTimeoutSec) {
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+    if (err) *err = "extraction timed out";
+    return false;
+  }
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
     if (err) *err = "extraction/install failed (需要 ar/tar)";
     return false;
   }
