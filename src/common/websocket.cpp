@@ -192,7 +192,7 @@ class WsImpl : public WebSocket {
     }
   }
 
-  void failConnection(const std::string& reason, bool notifyError) {
+  void failConnection(const std::string& reason, bool notifyError) override {
     if (state_.exchange(WsState::Closed) == WsState::Closed) return;
     if (stream_) stream_->close();
     if (notifyError && errorHandler_) errorHandler_(reason);

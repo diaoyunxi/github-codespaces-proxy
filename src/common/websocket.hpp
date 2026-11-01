@@ -91,7 +91,7 @@ class WebSocket {
   bool sendFrame(uint8_t opcode, const uint8_t* payload, size_t len, bool fin);
   /** 收到一个完整帧后的分派 */
   void dispatchFrame(uint8_t opcode, const Bytes& payload, bool fin);
-  void failConnection(const std::string& reason, bool notifyError);
+  virtual void failConnection(const std::string& reason, bool notifyError);
   void emitClose(const std::string& reason);
 
   std::atomic<WsState> state_{WsState::Connecting};
