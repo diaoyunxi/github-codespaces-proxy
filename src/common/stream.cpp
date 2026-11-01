@@ -161,7 +161,7 @@ ssize_t TlsStream::read(uint8_t* buf, size_t len, int timeoutMs) {
     if (e == SSL_ERROR_ZERO_RETURN) return 0;
     if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE) {
       // 需要更多底层字节：等 socket。无限阻塞场景下也切片等待以便响应退出。
-      const int slice = timeoutMs < 0 ? 200 : 200;
+      const int slice = timeoutMs < 0 ? 1000 : 200;  // 无限等待时使用更长的轮询间隔 (1s)，有限超时使用 200ms
       int waitMs = slice;
       if (timeoutMs >= 0) {
         const int64_t left = deadline - nowMs();
