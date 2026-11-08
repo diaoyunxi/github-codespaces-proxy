@@ -1,3 +1,5 @@
+> [← 返回文档目录](../README.md) ｜ 原文件：`scripts/README.md`。
+
 # Windows 操作脚本
 
 三个 PowerShell 脚本，与 Node 版行为一致，可直接配套本 C++ 客户端使用。
